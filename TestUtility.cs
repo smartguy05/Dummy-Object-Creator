@@ -21,8 +21,8 @@ namespace Portal.Common.Utility
         {
             if (!(first is string) && first is IEnumerable)
             {
-                var firstList = (IList) first;
-                var secondList = (IList) second;
+                var firstList = (IList)first;
+                var secondList = (IList)second;
                 var pass = true;
                 notTested = new List<Tuple<string, dynamic>>();
                 for (var i = 0; i < firstList.Count; i++)
@@ -43,7 +43,77 @@ namespace Portal.Common.Utility
             {
                 return CompareObjectsWork(first, second, out notTested);
             }
-            
+        }
+
+        public static T DeepCopy<T>(this T objectToCopy) where T : new()
+        {
+            var returnValue = Activator.CreateInstance<T>();
+            var props = returnValue.GetType().GetProperties().ToList();
+
+            foreach (var property in props)
+            {
+                if (!property.CanWrite)
+                {
+                    continue;
+                }
+
+                var value = property.GetValue(objectToCopy, null);
+                property.SetValue(returnValue, value);
+            }
+
+            return returnValue;
+        }
+
+        /// <summary>
+        /// Creates an IEnumerable of the specified type full of dummy values
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="obj">new instance of type you want dummy values for</param>
+        /// <param name="numberOfItems">number of items to create for the list</param>
+        /// <returns></returns>
+        public static IEnumerable<T> PopulateListOfObjects<T>(int numberOfItems)
+        {
+            for (var i = 0; i < numberOfItems; i++)
+            {
+                yield return PopulateObject<T>();
+            }
+        }
+
+        /// <summary>
+        /// Creates an object of the specified type full of random dummy values
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="obj">new instanc eof the type you want dummy values for</param>
+        /// <returns></returns>
+        public static T PopulateObject<T>()
+        {
+            try
+            {
+                var obj = Activator.CreateInstance(typeof(T));
+                var props = obj.GetType().GetProperties()
+                    .ToList();
+
+                foreach (var property in props)
+                {
+                    if (!property.CanWrite)
+                    {
+                        continue;
+                    }
+
+                    var value = property.GetValue(obj, null);
+                    var type = property.PropertyType;
+
+                    var newObj = SetSimpleObjectValue(type, value);
+
+                    property.SetValue(obj, newObj);
+                }
+
+                return (T)obj;
+            }
+            catch (Exception)
+            {
+                return (T)SetSimpleObjectValue(typeof(T), null);
+            }
         }
 
         private static bool CompareObjectsWork(object first, object second, out List<Tuple<string, dynamic>> notTested)
@@ -59,7 +129,7 @@ namespace Portal.Common.Utility
             {
                 return first == second;
             }
-            
+
             var firstProps = first.GetType().GetProperties().ToList();
             var secondProps = second.GetType().GetProperties().ToList();
 
@@ -74,14 +144,26 @@ namespace Portal.Common.Utility
             {
                 var value1 = prop.GetValue(first, null);
                 var val1Type = value1?.GetType();
-                var value2 = secondProps.FirstOrDefault(s => s.Name == prop.Name)?.GetValue(second, null);
+                var prop2 = secondProps.FirstOrDefault(s => s.Name == prop.Name);
 
-                if (value2 == null)
-                { 
+                if (prop2 == null)
+                {
                     notTested.Add(new Tuple<string, dynamic>(prop.Name, value1));
                     continue;
                 }
-                
+
+                var value2 = prop2.GetValue(second, null);
+                if (value1 == null)
+                {
+                    if (value2 == null)
+                    {
+                        continue;
+                    }
+
+                    pass = false;
+                    break;
+                }
+
                 if (!(value1 is string) && value1 is IEnumerable)
                 {
                     var notTested2 = new List<Tuple<string, dynamic>>();
@@ -124,49 +206,54 @@ namespace Portal.Common.Utility
             return pass;
         }
 
-        /// <summary>
-        /// Creates an IEnumerable of the specified type full of dummy values
-        /// </summary>
-        /// <typeparam name="T"></typeparam>
-        /// <param name="obj">new instance of type you want dummy values for</param>
-        /// <param name="numberOfItems">number of items to create for the list</param>
-        /// <returns></returns>
-        public static IEnumerable<T> PopulateListOfObjects<T>(int numberOfItems) where T : new()
+        private static DateTime GetRandomDatetime()
         {
-            for (var i = 0; i < numberOfItems; i++)
+            var start = new DateTime(1995, 1, 1);
+            var range = (DateTime.Today - start).Days;
+            return start.AddDays(random.Next(range));
+        }
+
+        private static string GetRandomString()
+        {
+            const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+            return new string(Enumerable.Repeat(chars, 12)
+                .Select(s => s[random.Next(s.Length)]).ToArray());
+        }
+
+        private static bool IsNumericType(this object o)
+        {
+            switch (Type.GetTypeCode(o.GetType()))
             {
-                yield return (T)PopulateObject<T>();
+                case TypeCode.Byte:
+                case TypeCode.SByte:
+                case TypeCode.UInt16:
+                case TypeCode.UInt32:
+                case TypeCode.UInt64:
+                case TypeCode.Int16:
+                case TypeCode.Int32:
+                case TypeCode.Int64:
+                case TypeCode.Decimal:
+                case TypeCode.Double:
+                case TypeCode.Single:
+                    return true;
+
+                default:
+                    return false;
             }
         }
-        
-        /// <summary>
-        /// Creats an object of the specified type full of random dummy values
-        /// </summary>
-        /// <typeparam name="T"></typeparam>
-        /// <param name="obj">new instanc eof the type you want dummy values for</param>
-        /// <returns></returns>
-        public static T PopulateObject<T>() where T: new()
+
+        private static object PopulateObjectOfUnknownType(Type type)
         {
-            var obj = Activator.CreateInstance(typeof(T));
-            var props = obj.GetType().GetProperties()
-                .ToList();
-        
-            foreach (var property in props)
+            try
             {
-                if (!property.CanWrite)
-                {
-                    continue;
-                }
-
-                var value = property.GetValue(obj, null);
-                var type = property.PropertyType;
-
-                var newObj = SetSimpleObjectValue(type, value);
-                
-                property.SetValue(obj, newObj);
+                var method = typeof(TestUtility).GetMethod("PopulateObject");
+                var methodRef = method.MakeGenericMethod(type);
+                return methodRef.Invoke(null, null);
             }
-
-            return (T)obj;
+            catch (Exception)
+            {
+                return null;
+            }
         }
 
         private static object SetSimpleObjectValue(Type type, object value)
@@ -185,7 +272,7 @@ namespace Portal.Common.Utility
                         {
                             value = Activator.CreateInstance(thisType);
                         }
-                        
+
                         var newObj = !thisType.IsPrimitive && !thisType.IsEnum && thisType.IsClass && thisType != typeof(string)
                             ? PopulateObjectOfUnknownType(thisType)
                             : SetSimpleObjectValue(thisType, value);
@@ -193,13 +280,11 @@ namespace Portal.Common.Utility
                     }
 
                     return newList;
-                    
                 }
-                catch (MissingMethodException e)
+                catch (MissingMethodException)
                 {
                     return null;
                 }
-
             }
 
             if (type.IsArray)
@@ -224,7 +309,7 @@ namespace Portal.Common.Utility
 
                     return newList;
                 }
-                catch (MissingMethodException e)
+                catch (MissingMethodException)
                 {
                     return null;
                 }
@@ -235,6 +320,13 @@ namespace Portal.Common.Utility
                 var trueFalse = random.Next() % 2 == 0;
 
                 return trueFalse;
+            }
+
+            if (value is Enum)
+            {
+                var options = Enum.GetNames(type).Length - 1;
+                var rdm = random.Next(0, options);
+                return Enum.Parse(type, rdm.ToString());
             }
 
             if (value != null && value.IsNumericType())
@@ -261,7 +353,6 @@ namespace Portal.Common.Utility
             if (type == typeof(char))
             {
                 return GetRandomString()[0];
-
             }
 
             if (type == typeof(DateTime))
@@ -281,7 +372,7 @@ namespace Portal.Common.Utility
                     var newObj = PopulateObjectOfUnknownType(type);
                     return newObj;
                 }
-                catch (MissingMethodException e)
+                catch (MissingMethodException)
                 {
                     return null;
                 }
@@ -305,55 +396,6 @@ namespace Portal.Common.Utility
             }
 
             return null;
-        }
-
-        private static object PopulateObjectOfUnknownType(Type type)
-        {
-            try
-            {
-                var method = typeof(TestUtility).GetMethod("PopulateObject");
-                var methodRef = method.MakeGenericMethod(type);
-                return methodRef.Invoke(null, null);
-            }
-            catch (Exception e)
-            {
-                return null;
-            }
-        }
-        
-        private static bool IsNumericType(this object o)
-        {
-            switch (Type.GetTypeCode(o.GetType()))
-            {
-                case TypeCode.Byte:
-                case TypeCode.SByte:
-                case TypeCode.UInt16:
-                case TypeCode.UInt32:
-                case TypeCode.UInt64:
-                case TypeCode.Int16:
-                case TypeCode.Int32:
-                case TypeCode.Int64:
-                case TypeCode.Decimal:
-                case TypeCode.Double:
-                case TypeCode.Single:
-                    return true;
-                default:
-                    return false;
-            }
-        }
-
-        private static string GetRandomString()
-        {
-            const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-            return new string(Enumerable.Repeat(chars, 12)
-                .Select(s => s[random.Next(s.Length)]).ToArray());
-        }
-
-        private static DateTime GetRandomDatetime()
-        {
-            var start = new DateTime(1995, 1, 1);
-            var range = (DateTime.Today - start).Days;
-            return start.AddDays(random.Next(range));
         }
     }
 }
